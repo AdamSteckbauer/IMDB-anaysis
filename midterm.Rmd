@@ -1,0 +1,142 @@
+---
+title: "STAT 345 Midterm Project"
+date: "Due April 9"
+author: "Adam Steckbauer"
+output:
+  html_document: default
+  pdf_document: default
+font: 12pt
+---
+
+> "NOBODY KNOWS ANYTHING. Not one person in the entire motion picture field knows for a certainty what’s going to work. Every time out it’s a guess—and, if you’re lucky, an educated one." William Goldman, _Adventures in the Screen Trade_
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(rvest)
+library(htmlwidgets)
+library(ggplot2)
+library(tidytext)
+movie_data <- as_tibble(read_csv("moviedata.csv"))
+```
+
+Your data for the midterm project consists of the 1000 highest rated movies on the Internet Movie Database (IMDB). You can find the first 50 movies [here](https://www.imdb.com/search/title/?groups=top_1000&start=1), with navigational links to the other 950 movies.
+
+Each IMDB page records a large amount of information about each movie. We are interested in the following:
+
+   * The average rating of the movie by IMDB users. 
+   * The number of ratings of the movie. 
+   * The year the movie was released. 
+   * The gross revenue of the movie (US).
+   * The budget for the movie.
+   * The movie's title.
+   * The movie’s genre(s). 
+   * The four top-billed actors.
+   * The text of the 25 "most helpful" reviews, as well as their helpfulness (ratio of helpful votes out of total votes.) 
+    
+Note that the first five (and last) variables are numeric, and the genre, title, and reviews are strings. In some cases, some of these variables may be missing for a particular movie.
+
+In some cases, the business information page lists multiple gross revenues, depending on the country, or gross receipts by different dates. In case of ambiguity, we are interested in gross receipts for the US, and want to use the figure for the latest available date. If no gross revenue figure is available for the US, treat the gross revenue as missing.
+
+**General advice:** Get started on this one early. If you wait to the last minute, it will not go well.
+
+1. (30 pts) Write code to extract the variables described above from all 1000 movies, and store it in a data frame. For full credit, you should write a function which can extract this information from an arbitrary movie code (or url), and then further code which uses that function and applies it to all 1000 movies. For full credit, your code should avoid loops in favor of vectorized operations and apply (and sapply, lapply, etc., as convenient). Your code should handle missing values appropriately, and should not convert categorical variables into numbers, or numbers into strings, etc. 
+
+#this code chunk is responsible for getting access to all of the urls for the top 1000 movies
+```{r}
+full_urls <- vector()
+starts <- c(1,51,101,151,201,251,301,351,401,451,501,551,601,651,701,751,801,851,901,951)
+for(i in starts) {
+   url <- paste0("https://www.imdb.com/search/title/?groups=top_1000&start=", i)
+   h <- read_html(url)
+   movie_nodes <- html_nodes(h, ".lister-item-header a")
+   movie_text <- html_attr(movie_nodes, "href")
+   short_urls <- as_tibble(sapply(movie_text, str_split, pattern = "/")) 
+   short_urls <- as_tibble(cbind(nms = names(short_urls), t(short_urls)) ) #transpose the tibble (swap columns for rows)
+   colnames(short_urls) <- c("starting url", "empty", "titles", "id", "ending")
+   short_urls <- short_urls %>% select("id")
+   short_urls <- tibble(rep("https://www.imdb.com/title/", 50), short_urls)
+   short_urls <- short_urls %>% mutate(full_url = paste(start,id, sep = "")) %>% select(full_url)
+   full_urls <- c(full_urls,short_urls$full_url)
+}
+head(full_urls)
+
+```
+#this is as far as I could get with the data collection. I was able to use the SelectorGadget to get the data for the title, year of release and the rating
+#because of the time it takes to get my code to run, I have limited my incomplete code to the first 10
+```{r}
+title <- vector()
+year <- vector()
+rating <- vector()
+num_movies <- 10
+
+for(i in 1:num_movies){
+   url <- full_urls[i]
+   h <- read_html(url)
+   title_and_year <- html_text(html_nodes(h, "h1"))
+   year[i] <- as.numeric(str_sub(str_trim(title_and_year), -5, -2)) 
+   title[i] <- str_sub(str_trim(title_and_year), 1, -7) 
+   rating[i] <- as.numeric(str_trim(html_text(html_nodes(h, "strong span"))))
+}
+
+adam_data <- tibble(title, year, rating)
+adam_data
+```
+
+_Victory conditions:_ You have a data frame with 1000 rows and columns that contain the first six variables, as well as each genre, review, and review helpfulness scores in appropriately formatted columns. Columns have short but clear names. Most rows have no missing values; the few rows where there are missing values have NA in the appropriate places. 
+
+_Mercy condition:_ If you are struggling to get these data in a reasonable form, a compiled, reasonably clean and accurate version for either the URL list or movie data will be added to Canvas called `imdb_urls.csv` and `moviedata.Rdata` respectively.  Use them to answer the following parts, if necessary. Your work in this part, even if not complete, can be scored for partial credit.
+
+2. (30 pts) Write code to plot the distributions of the first five variables listed above. Make sure missing values, if any, are handled gracefully. Your plots should be appropriately labeled, titled, colored, etc. Comment on the features each plot presents -- what information is gained by seeing these graphics?
+
+```{r}
+data_a <- movie_data %>% drop_na(num_ratings)
+ggplot(data_a, aes(x = num_ratings)) + geom_histogram(binwidth = 50000) + xlab("Number of Ratings") + ylab("Count") + theme_classic() + labs(title ="Number of Ratings for the Top 1000 IMDB movies")
+
+data_b <- movie_data %>% drop_na(year)
+ggplot(data_b, aes(x = year)) + geom_histogram(binwidth = 2) + xlab("Year") + ylab("Count") + theme_classic() + labs(title ="Year of Release for the Top 1000 IMDB movies")
+
+data_c <- movie_data %>% drop_na(budget) %>% filter(budget < 2000000000)
+ggplot(data_c, aes(x = budget)) + geom_histogram(binwidth = 7000000) + xlab("Budget") + ylab("Count") + theme_classic() + labs(title ="Budget of Top 1000 IMDB movies (less than 2 billion")
+
+data_d <- movie_data %>% drop_na(gross) 
+ggplot(data_d, aes(x = gross)) + geom_histogram(binwidth = 10000000) + xlab("Gross") + ylab("Count") + theme_classic() + labs(title ="Gross of Top 1000 IMDB movies")
+
+data_e <- movie_data %>% drop_na(rating) 
+ggplot(data_e, aes(x= rating)) + geom_histogram(binwidth = .1) + xlab("Rating out of 10") + ylab("Count") + theme_classic() + labs(title ="Ratings of Top 1000 IMDB movies")
+```
+
+3. (20 pts) Complete a sentiment analyses on the 25 most helpful reviews for each movie. The choice of lexicon is up to you, but explain your reasons why your choice is the most reasonable/appropriate option. Add a summary of this information to your original data frame.
+
+```{r}
+reviews <- movie_data %>% select(Review_1, Review_2, Review_3, Review_4, Review_5, Review_6, Review_7, Review_8, Review_9, Review_10, Review_11, Review_12, Review_13, Review_14, Review_15, Review_16, Review_17, Review_18, Review_19, Review_20, Review_21, Review_22, Review_23, Review_24, Review_25) 
+
+#new_reviews <- reviews %>% unnest_tokens(word, Review_1) %>% unnest_tokens(word, Review_2) %>% unnest_tokens(word, Review_3) %>% unnest_tokens(word, Review_4) %>% unnest_tokens(word, Review_5) %>% unnest_tokens(word, Review_6) %>% unnest_tokens(word, Review_7) %>% unnest_tokens(word, Review_8) %>% unnest_tokens(word, Review_9) %>% unnest_tokens(word, Review_10) %>% unnest_tokens(word, Review_11) %>% unnest_tokens(word, Review_12) %>% unnest_tokens(word, Review_13) %>% unnest_tokens(word, Review_14) %>% unnest_tokens(word, Review_15) %>% unnest_tokens(word, Review_16) %>% unnest_tokens(word, Review_17) %>% unnest_tokens(word, Review_18) %>% unnest_tokens(word, Review_19) %>% unnest_tokens(word, Review_20) %>% unnest_tokens(word, Review_21) %>% unnest_tokens(word, Review_22) %>% unnest_tokens(word, Review_23) %>% unnest_tokens(word, Review_24) %>% unnest_tokens(word, Review_25)
+
+new_reviews <- reviews %>% unnest_tokens(words, Review_1) %>% select(words) 
+new_reviews %>% filter(!words %in% stop_words$word ) %>% count(words) %>% arrange(desc(n))
+```
+
+4. (20 pts) Variable Relationships. Create one plot that displays the relationship (or lack thereof) between any of the movie variables. Your plot should be appropriately labeled, titled, colored, etc. Your plot should display at minimum 3 variables. A plot with more variables included will be scored more favorably (as long as the plot is reasonable and legible). Reviews and helpfulness/sentiment scores are considered aggregate variables (e.g., 25 helpfulness scores will be considered a single variable). Some questions that you might consider when creating your plot are below, though you are not limited to these questions. 
+   - Is there any evidence of a relationship between review helpfulness and review sentiment? 
+   - Do the review scores (from the most helpful reviews) generally agree with the overall IMDB average rating?
+   - Is there evidence of a relationship between average IMDB rating and a movie's gross? Does release year seem to have an effect on this relationship?
+   - Is there evidence of a relationship between a movie's budget and a movie's gross? Does release year seem to have an effect on this relationship? 
+   - Do any actors have an effect (positive or negative) on the relationship between budget, gross, or average IMDB rating? Is this pattern common across any genres?
+
+```{r, message = FALSE, fig.height=8, fig.width=16}
+problem_4_data <- movie_data %>% filter(budget < 2000000000) %>% drop_na(actors) %>% select(budget, actors, rating, genres) %>% mutate(has_jn = str_detect(actors, "Jack Nicholson")) %>% mutate(has_mb = str_detect(actors, "Marlon Brando")) %>% mutate(has_rdn = str_detect(actors, "Robert De Niro")) %>% mutate(has_ap = str_detect(actors, "Al Pacino")) %>% mutate(has_ddl = str_detect(actors, "Daniel Day")) %>% mutate(has_dh = str_detect(actors, "Dustin Hoffman")) %>% mutate(has_th = str_detect(actors, "Tom Hanks")) %>% mutate(has_ah = str_detect(actors, "Anthony Hopkins")) %>% mutate(has_pn = str_detect(actors, "Paul Newman")) %>% mutate(has_dw = str_detect(actors, "Denzel Washington")) 
+
+problem_4_data <- problem_4_data %>% mutate(has_actor = has_jn | has_mb | has_rdn | has_ap | has_ddl | has_dh | has_th | has_ah | has_pn | has_dw)
+
+
+ggplot(problem_4_data, aes(x= budget, y = rating, color = has_actor)) + geom_point() + geom_smooth(se=FALSE) + labs(title = "Does Having an IMDB Top Ten Actor Affect Movie Budget vs Rating?", x = "Budget of the Movie", y = "IMBD rating out of 10") + scale_color_discrete(name = "Does the Movie Have an IMDB top 10 Actor?", labels = c("NO", "YES"))
+```
+  
+  
+  
+  
+  
+  
+
+
